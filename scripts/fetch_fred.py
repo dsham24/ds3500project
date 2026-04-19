@@ -18,8 +18,10 @@ import requests
 import pandas as pd
 import time
 import os
+from dotenv import load_dotenv
 
-FRED_API_KEY = "e144a1e44380b814485511875f263f3b"
+load_dotenv()
+FRED_API_KEY = os.environ.get("FRED_API_KEY")
 BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
 
 # series to fetch: {series_id: description}

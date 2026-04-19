@@ -19,8 +19,10 @@ API Key: Free, register at https://api.census.gov/data/key_signup.html
 import requests
 import pandas as pd
 import os
+from dotenv import load_dotenv
 
-CENSUS_API_KEY = "cf1b1a7f84baba397b7984a4fed45d8c74a669b3"
+load_dotenv()
+CENSUS_API_KEY = os.environ.get("CENSUS_API_KEY")
 BASE_URL = "https://api.census.gov/data/{year}/acs/acs5"
 
 # variables to fetch
