@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+  dashboard:
+    build: .
+    ports:
+      - "5006:5006"
+    volumes:
+      # Mount data folder so you can update merged.parquet without rebuilding
+      - ./data:/app/data:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
