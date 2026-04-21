@@ -61,6 +61,15 @@ The dashboard opens at `http://localhost:5006/dashboard`.
 
 ## Running with Docker
 
+Before running Docker you need to generate the data files locally first. The `data/` folder is not included in the repo since it's in `.gitignore`.
+
+```bash
+python scripts/fetch_all.py
+python scripts/merge.py
+```
+
+Then start the container:
+
 ```bash
 docker-compose up
 ```
