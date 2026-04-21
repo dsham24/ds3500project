@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 
 pn.extension("plotly")
 
-# ── Load data ────────────────────────────────────────────────────────────────
+# load data
 
 df = pd.read_parquet(os.path.join(os.path.dirname(__file__), "data", "merged.parquet"))
 
@@ -40,10 +40,11 @@ METRICS = {
 }
 STATES = sorted(df["state_name"].dropna().unique().tolist())
 
-# ── Widgets ──────────────────────────────────────────────────────────────────
+# widgets
 
-year_slider   = pn.widgets.IntSlider(name="Year", start=int(df["year"].min()),
-                                     end=int(df["year"].max()), step=1, value=2020)
+year_slider   = pn.widgets.DiscreteSlider(name="Year",
+                                          options=[2010, 2012, 2014, 2016, 2018, 2020, 2022, 2023],
+                                          value=2020)
 metric_select = pn.widgets.Select(name="Metric",
                                   options={v: k for k, v in METRICS.items()},
                                   value="price_to_income_ratio")
@@ -51,7 +52,7 @@ state_search  = pn.widgets.AutocompleteInput(name="Search State", options=STATES
                                              value="California", min_characters=1,
                                              placeholder="Type a state name...")
 
-# ── Chart functions ───────────────────────────────────────────────────────────
+# chart functions
 
 def metric_cards(year):
     """Five summary number cards for the selected year."""
@@ -200,14 +201,14 @@ def viz4_iframe():
     )
 
 
-# ── Bind widgets to charts ────────────────────────────────────────────────────
+# bind widgets to charts
 
 cards_bound  = pn.bind(metric_cards, year=year_slider)
 map_bound    = pn.bind(viz2_map,     year=year_slider, metric=metric_select)
 bar_bound    = pn.bind(viz2_bar,     year=year_slider, metric=metric_select)
 trend_bound  = pn.bind(viz3,         state=state_search)
 
-# ── Layout ────────────────────────────────────────────────────────────────────
+# build layout
 
 template = pn.template.FastListTemplate(
     title="U.S. Housing Market & Affordability Dashboard",

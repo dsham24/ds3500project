@@ -4,18 +4,29 @@ import os
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
+
 def merge_all(fred, census, zillow):
+    """
+    Merge FRED, Census, and Zillow into one dataset.
+
+    Zillow and FRED are aggregated to annual averages first.
+    Census and Zillow are joined on state name and year.
+    FRED national data is joined on year only.
+    """
     fred["year"] = fred["date"].dt.year
     zillow["year"] = zillow["date"].dt.year
 
+    # annual average for each FRED series
     fred_yearly = fred.groupby("year").mean(numeric_only=True).reset_index()
 
+    # annual average ZHVI per state
     zillow_yearly = (
         zillow.groupby(["RegionName", "year"])["zhvi"]
         .mean()
         .reset_index()
     )
 
+    # join Census to Zillow on state name and year
     merged = pd.merge(
         zillow_yearly,
         census,
@@ -24,6 +35,7 @@ def merge_all(fred, census, zillow):
         how="inner"
     )
 
+    # attach national FRED data by year
     merged = pd.merge(
         merged,
         fred_yearly,
@@ -36,6 +48,7 @@ def merge_all(fred, census, zillow):
     )
 
     return merged
+
 
 if __name__ == "__main__":
     fred = pd.read_csv(os.path.join(DATA_DIR, "fred_housing_data.csv"))
@@ -50,12 +63,10 @@ if __name__ == "__main__":
 
     merged = merge_all(fred, census, zillow)
 
-    # Save parquet (required)
     output_path = os.path.join(DATA_DIR, "merged.parquet")
     merged.to_parquet(output_path, index=False)
 
-    #added this just for viewing/reference only
+    # save CSV as a readable backup
     merged.to_csv(os.path.join(DATA_DIR, "merged.csv"), index=False)
 
     print(f"Saved merged dataset to {output_path}")
-

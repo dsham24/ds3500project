@@ -1,18 +1,3 @@
-"""
-Load the Zillow Home Value Index (ZHVI) static dataset
-
-The ZHVI measures the typical home value across a given region
-Data is available as CSVs from Zillow Research: https://www.zillow.com/research/data/
-
-This script tries to download the ZHVI data from Zillow's website.
-If that fails it falls back to downloading
-from the HuggingFace mirror or Kaggle
-
-Data source: Zillow Research (static CSV — no API key required)
-Fields: RegionID, RegionName, StateName, SizeRank, + monthly home values
-Geographic level: State-level ZHVI (All Homes, SFR, Condo)
-"""
-
 import pandas as pd
 import requests
 import os
@@ -20,7 +5,7 @@ import io
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 
-# zillow changes download URLs frequently
+# Zillow changes these URLs periodically, so we keep a fallback
 ZHVI_URLS = [
     "https://files.zillowstatic.com/research/public_csvs/zhvi/State_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv",
     "https://files.zillowstatic.com/research/public_csvs/zhvi/State_zhvi_uc_sfrcondo_tier_0.33_0.67_month.csv",
@@ -29,52 +14,37 @@ ZHVI_URLS = [
 
 def download_zillow_zhvi():
     """
-    Attempt to download ZHVI state-level data from Zillow
-
-    Tries multiple URLs since Zillow changes them periodically
-
-    Returns
-    pd.DataFrame or None
-        The ZHVI DataFrame, or None if all downloads fail
+    Try to download ZHVI state-level data from Zillow.
+    Returns a DataFrame or None if all URLs fail.
     """
     for url in ZHVI_URLS:
         try:
-            print(f"  Trying: {url[:80]}...")
+            print(f"  Trying {url[:70]}...")
             response = requests.get(url, timeout=30)
             response.raise_for_status()
             df = pd.read_csv(io.StringIO(response.text))
-            print(f"  Success! Got {len(df)} rows, {len(df.columns)} columns")
+            print(f"  Downloaded {len(df)} rows")
             return df
         except Exception as e:
             print(f"  Failed: {e}")
-
     return None
 
 
 def reshape_zillow_data(df):
     """
-    Reshape wide-format Zillow ZHVI data to long format
-
-    Zillow data has one column per month
-    This converts it to rows with columns: [RegionName, State, date, zhvi]
+    Reshape Zillow from wide format (one column per month) to long format.
 
     Parameters
-    df : pd.DataFrame
-        Raw Zillow ZHVI data in wide format
+    df : pd.DataFrame raw wide-format Zillow data
 
     Returns
-    pd.DataFrame
-        Long-format DataFrame with date and zhvi columns
+    pd.DataFrame with columns [RegionName, date, zhvi, ...]
     """
-    # identify date columns
     id_cols = [c for c in df.columns if not c[0].isdigit()]
     date_cols = [c for c in df.columns if c[0].isdigit()]
 
-    # keep only key identifiers
-    keep_cols = []
-    for col in ["RegionID", "RegionName", "StateName", "SizeRank", "RegionType"]:
-        if col in id_cols:
-            keep_cols.append(col)
+    keep_cols = [c for c in ["RegionID", "RegionName", "StateName", "SizeRank", "RegionType"]
+                 if c in id_cols]
 
     df_long = df.melt(
         id_vars=keep_cols,
@@ -86,7 +56,7 @@ def reshape_zillow_data(df):
     df_long["date"] = pd.to_datetime(df_long["date"])
     df_long["zhvi"] = pd.to_numeric(df_long["zhvi"], errors="coerce")
 
-    # match FRED data
+    # filter to match FRED date range
     df_long = df_long[df_long["date"] >= "2000-01-01"].copy()
     df_long = df_long.sort_values(["RegionName", "date"]).reset_index(drop=True)
 
@@ -95,18 +65,14 @@ def reshape_zillow_data(df):
 
 def create_fallback_dataset():
     """
-    Create a realistic fallback ZHVI dataset if downloads fail
+    Generate a synthetic ZHVI dataset for major states if the download fails.
+    Uses approximate real values and simulates historical growth patterns.
 
-    Uses approximate real values for major states to demonstrate
-    the data structure. In production, use the actual Zillow download
-
-    Returns
-    pd.DataFrame
-        Synthetic but realistic ZHVI data in long format
+    Returns pd.DataFrame
     """
     import numpy as np
 
-    print("  Creating fallback dataset with approximate values...")
+    print("  Using fallback synthetic dataset")
 
     states_data = {
         "California": {"base": 250000, "growth": 0.005},
@@ -137,33 +103,26 @@ def create_fallback_dataset():
     np.random.seed(42)
     for state, info in states_data.items():
         price = info["base"]
-        for i, date in enumerate(dates):
-            if date.year >= 2004 and date.year <= 2006:
-                growth = info["growth"] * 2  # Bubble
-            elif date.year >= 2007 and date.year <= 2011:
-                growth = -0.003  # Crash
+        for date in dates:
+            if 2004 <= date.year <= 2006:
+                growth = info["growth"] * 2       # housing bubble
+            elif 2007 <= date.year <= 2011:
+                growth = -0.003                    # crash and recovery
             elif date.year >= 2020:
-                growth = info["growth"] * 2.5  # post-COVID surge
+                growth = info["growth"] * 2.5     # post-COVID surge
             else:
                 growth = info["growth"]
 
             price *= (1 + growth + np.random.normal(0, 0.002))
-            rows.append({
-                "RegionName": state,
-                "date": date,
-                "zhvi": round(price, 0),
-            })
+            rows.append({"RegionName": state, "date": date, "zhvi": round(price, 0)})
 
-    df = pd.DataFrame(rows)
-    return df
+    return pd.DataFrame(rows)
 
 
 if __name__ == "__main__":
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    print("=" * 60)
-    print("Loading Zillow Home Value Index (ZHVI) Data")
-    print("=" * 60)
+    print("Fetching Zillow ZHVI data...")
 
     raw_df = download_zillow_zhvi()
 
@@ -171,23 +130,16 @@ if __name__ == "__main__":
         df = reshape_zillow_data(raw_df)
         raw_path = os.path.join(OUTPUT_DIR, "zillow_zhvi_raw.csv")
         raw_df.to_csv(raw_path, index=False)
-        print(f"Saved raw data: {raw_path}")
     else:
-        print("\nAll Zillow downloads failed. Using fallback dataset.")
-        print("NOTE: For your final project, download the CSV manually from:")
-        print("  https://www.zillow.com/research/data/")
-        print("  Select: ZHVI -> State -> All Homes -> Smoothed, Seasonally Adjusted")
+        print("  Download failed, using fallback dataset")
         df = create_fallback_dataset()
 
     output_path = os.path.join(OUTPUT_DIR, "zillow_zhvi_data.csv")
     df.to_csv(output_path, index=False)
-    print(f"\nSaved processed dataset: {output_path} ({len(df)} rows)")
+    print(f"Saved {len(df)} rows to {output_path}")
 
     sample_path = os.path.join(OUTPUT_DIR, "zillow_zhvi_sample.csv")
     df.head(100).to_csv(sample_path, index=False)
-    print(f"Saved sample: {sample_path} (100 rows)")
 
-    print(f"\nRegions: {df['RegionName'].nunique()}")
-    print(f"Date range: {df['date'].min()} to {df['date'].max()}")
-    if "zhvi" in df.columns:
-        print(f"ZHVI range: ${df['zhvi'].min():,.0f} - ${df['zhvi'].max():,.0f}")
+    print(f"States: {df['RegionName'].nunique()}")
+    print(f"Date range: {df['date'].min().date()} to {df['date'].max().date()}")

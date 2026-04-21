@@ -1,76 +1,74 @@
-# Data Sources — API Keys, Rate Limits & Access Notes
+# Data Sources
 
-## Source 1: FRED API (Federal Reserve Economic Data)
-- **Type:** REST API (JSON responses)
-- **Base URL:** `https://api.stlouisfed.org/fred/series/observations`
-- **API Key:** Required (free). Register at https://fred.stlouisfed.org/docs/api/api_key.html
-- **Rate Limits:** 120 requests per minute
-- **Authentication:** API key passed as query parameter
-- **Documentation:** https://fred.stlouisfed.org/docs/api/fred/
-- **Series Used:**
-  | Series ID | Description | Frequency |
-  |-----------|-------------|-----------|
-  | MSPUS | Median Sales Price of Houses Sold | Quarterly |
-  | MORTGAGE30US | 30-Year Fixed Rate Mortgage Average | Weekly |
-  | HOUST | Housing Starts: Total New Privately Owned | Monthly |
-  | CSUSHPINSA | S&P/Case-Shiller National Home Price Index | Monthly |
-  | RHORUSQ156N | Homeownership Rate for the United States | Quarterly |
-  | MSACSR | Monthly Supply of Houses | Monthly |
-- **Key Fields:** `date`, `value` (numeric observation)
-- **Notes:** Missing values encoded as `"."`. Different series have different frequencies, requiring careful alignment when merging.
+This project pulls from three sources. Two are APIs and one is a static file download. Details on access, fields, and known issues are below.
 
 ---
 
-## Source 2: U.S. Census Bureau API (American Community Survey)
-- **Type:** REST API (JSON array responses)
-- **Base URL:** `https://api.census.gov/data/{year}/acs/acs5`
-- **API Key:** Required (free). Register at https://api.census.gov/data/key_signup.html
-- **Rate Limits:** 500 requests/day without key; higher with key
-- **Authentication:** API key passed as query parameter
-- **Documentation:** https://www.census.gov/data/developers/data-sets.html
-- **Variables Used:**
-  | Variable | Description |
-  |----------|-------------|
-  | B19013_001E | Median household income (past 12 months) |
-  | B25077_001E | Median value of owner-occupied housing units |
-  | B25064_001E | Median gross rent |
-  | B25003_001E | Total occupied housing units |
-  | B25003_002E | Owner-occupied housing units |
-  | B25003_003E | Renter-occupied housing units |
-  | B01003_001E | Total population |
-- **Geographic Level:** State (FIPS codes)
-- **Years Available:** ACS 5-year estimates from 2009 onward. We use: 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2023
-- **Key Fields:** `NAME` (state name), `state` (FIPS code), variable values
-- **Notes:** Values of `-666666666` indicate suppressed data. Response format is a JSON array where the first element is headers.
+## FRED API
+
+**Base URL:** `https://api.stlouisfed.org/fred/series/observations`  
+**API key:** Required (free) — https://fred.stlouisfed.org/docs/api/api_key.html  
+**Rate limit:** 120 requests per minute  
+**Docs:** https://fred.stlouisfed.org/docs/api/fred/
+
+FRED provides national-level economic time series data. We pull six series, all starting from 2000-01-01.
+
+| Series ID | Description | Frequency |
+|-----------|-------------|-----------|
+| MSPUS | Median sales price of houses sold | Quarterly |
+| MORTGAGE30US | 30-year fixed mortgage average | Weekly |
+| HOUST | New privately-owned housing starts | Monthly |
+| CSUSHPINSA | S&P/Case-Shiller national home price index | Monthly |
+| RHORUSQ156N | U.S. homeownership rate | Quarterly |
+| MSACSR | Monthly supply of houses | Monthly |
+
+**Known issues:**
+- Missing values are encoded as `"."` — converted to NaN during cleaning
+- Series have different frequencies, so the merged table is sparse before annual aggregation
 
 ---
 
-## Source 3: Zillow Home Value Index (Static CSV)
-- **Type:** Static CSV download (no API key required)
-- **Download URL:** https://www.zillow.com/research/data/
-  - Select: ZHVI → State → All Homes → Smoothed, Seasonally Adjusted
-- **Rate Limits:** None (direct file download)
-- **Authentication:** None
-- **Documentation:** https://www.zillow.com/research/data/
-- **Key Fields:**
-  | Field | Description |
-  |-------|-------------|
-  | RegionID | Zillow's unique region identifier |
-  | RegionName | State name |
-  | SizeRank | Population-based ranking |
-  | Date columns | Monthly ZHVI values (YYYY-MM-DD format) |
-- **Notes:** Data comes in wide format (one column per month). We reshape to long format for merging. Zillow frequently changes download URLs — we include fallback logic. ZHVI represents the "typical" home value (35th-65th percentile).
+## U.S. Census Bureau API (ACS 5-Year Estimates)
+
+**Base URL:** `https://api.census.gov/data/{year}/acs/acs5`  
+**API key:** Required (free) — https://api.census.gov/data/key_signup.html  
+**Rate limit:** 500 requests/day without a key, higher with one  
+**Docs:** https://www.census.gov/data/developers/data-sets.html
+
+We pull state-level housing and income data for 8 years: 2010, 2012, 2014, 2016, 2018, 2020, 2022, 2023. The response is a JSON array where the first element is the header row.
+
+| Variable Code | Column Name | Description |
+|---------------|-------------|-------------|
+| B19013_001E | median_household_income | Median household income |
+| B25077_001E | median_home_value | Median owner-occupied home value |
+| B25064_001E | median_gross_rent | Median gross rent |
+| B25003_001E | total_occupied_units | Total occupied housing units |
+| B25003_002E | owner_occupied_units | Owner-occupied units |
+| B25003_003E | renter_occupied_units | Renter-occupied units |
+| B01003_001E | total_population | Total population |
+
+Two columns are derived after fetching: `homeownership_rate` and `price_to_income_ratio`.
+
+**Known issues:**
+- Values of `-666666666` mean the data was suppressed for privacy — replaced with NaN during cleaning
+- ACS 5-year estimates are only released for certain years, which is why the year slider in the dashboard skips odd years
 
 ---
 
-## Merge Strategy
+## Zillow Home Value Index (ZHVI)
 
-**Join keys:**
-- FRED ↔ Census: Merge on **time period** (year/quarter). FRED data is national-level; Census is state-level. We'll aggregate or use national-level FRED data as context alongside state-level Census data.
-- Census ↔ Zillow: Merge on **state name** + **year/month**. Both have state-level geography.
-- All three: Final merged dataset keyed on **(state, date)** with national economic indicators from FRED applied across all states for a given time period.
+**Download:** https://www.zillow.com/research/data/  
+**Selection:** ZHVI → State → All Homes → Smoothed, Seasonally Adjusted  
+**API key:** Not required  
 
-**Challenges:**
-- Different frequencies (weekly, monthly, quarterly, annual) — will resample to monthly or quarterly
-- FRED is national only; Census and Zillow are state-level
-- Missing data across sources needs careful handling
+ZHVI measures the typical home value at the 35th to 65th percentile for each state on a monthly basis. The raw file is in wide format with one column per month, which we reshape to long format before merging.
+
+| Field | Description |
+|-------|-------------|
+| RegionName | State name — used as the join key |
+| SizeRank | Population-based size ranking |
+| Date columns | Monthly ZHVI value in USD (e.g. `2020-01-31`) |
+
+**Known issues:**
+- Zillow changes the download URL periodically — the fetch script tries two URLs before falling back to a synthetic dataset
+- `StateName` column is empty in the raw file, so we join on `RegionName` directly
