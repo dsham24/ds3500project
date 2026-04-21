@@ -36,6 +36,14 @@ Do not commit the `.env` file — it is listed in `.gitignore`.
 python scripts/fetch_all.py
 ```
 
+If any individual source fails, you can run it separately:
+
+```bash
+python scripts/fetch_fred.py
+python scripts/fetch_census.py
+python scripts/fetch_zillow.py
+```
+
 This saves CSV files to `data/`:
 - `fred_housing_data.csv` — national economic indicators
 - `census_housing_data.csv` — state-level income and housing
