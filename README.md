@@ -100,7 +100,7 @@ docker-compose up
 pytest tests/test_pipeline.py -v
 ```
 
-All 8 tests should pass. Tests cover data loading, cleaning, merge logic, and validation.
+All tests should pass. Tests cover data loading, cleaning, merge logic, validation, and more.
 
 ---
 
