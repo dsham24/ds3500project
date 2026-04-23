@@ -7,26 +7,49 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 
 def merge_all(fred, census, zillow):
     """
-    Merge FRED, Census, and Zillow into one dataset.
+    Merge FRED, Census, and Zillow into a single state-year dataset.
 
-    Zillow and FRED are aggregated to annual averages first.
-    Census and Zillow are joined on state name and year.
-    FRED national data is joined on year only.
+    All three sources run at different frequencies and geographic levels,
+    so we bring them to a common denominator before joining:
+    - Zillow is monthly, aggregated to annual averages per state
+    - FRED is weekly/monthly/quarterly, aggregated to annual national averages
+    - Census is already annual at the state level
+
+    Join logic:
+    - Census joins to Zillow on state_name and year (inner join keeps only
+      states present in both, which in practice is all 50 states)
+    - FRED national averages join on year only, adding macro context to
+      every state row for that year
+
+    Parameters:
+    
+    fred : pd.DataFrame
+        - Cleaned FRED data with a parsed date column.
+    census : pd.DataFrame
+        - Cleaned Census ACS data with state_name and year columns.
+    zillow : pd.DataFrame
+        - Cleaned Zillow data with RegionName and date columns.
+
+    Returns:
+    
+    pd.DataFrame
+        Merged dataset with one row per (state, year).
     """
+    # extract year from dates so we can group by year across all three sources
     fred["year"] = fred["date"].dt.year
     zillow["year"] = zillow["date"].dt.year
 
-    # annual average for each FRED series
+    # aggregate FRED to annual averages: mixed frequencies collapse to one value per year
     fred_yearly = fred.groupby("year").mean(numeric_only=True).reset_index()
 
-    # annual average ZHVI per state
+    # aggregate Zillow to annual averages per state: monthly ZHVI collapses to one value per state per year
     zillow_yearly = (
         zillow.groupby(["RegionName", "year"])["zhvi"]
         .mean()
         .reset_index()
     )
 
-    # join Census to Zillow on state name and year
+    # inner join Census to Zillow on state name and year: keeps states present in both sources
     merged = pd.merge(
         zillow_yearly,
         census,
@@ -35,7 +58,7 @@ def merge_all(fred, census, zillow):
         how="inner"
     )
 
-    # attach national FRED data by year
+    # left join FRED national averages by year: every state row gets the same national mortgage rate and price index
     merged = pd.merge(
         merged,
         fred_yearly,
@@ -43,6 +66,7 @@ def merge_all(fred, census, zillow):
         how="left"
     )
 
+    # derive price-to-income ratio: measures how many years of income it takes to buy the median home
     merged["price_to_income_ratio"] = (
         merged["median_home_value"] / merged["median_household_income"]
     )
@@ -63,10 +87,11 @@ if __name__ == "__main__":
 
     merged = merge_all(fred, census, zillow)
 
+    # save as parquet for efficient loading in the dashboard
     output_path = os.path.join(DATA_DIR, "merged.parquet")
     merged.to_parquet(output_path, index=False)
 
-    # save CSV as a readable backup
+    # save CSV for analysis
     merged.to_csv(os.path.join(DATA_DIR, "merged.csv"), index=False)
 
     print(f"Saved merged dataset to {output_path}")
